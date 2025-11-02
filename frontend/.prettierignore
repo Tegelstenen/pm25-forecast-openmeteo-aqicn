@@ -1,0 +1,9 @@
+.next
+.cache
+.vercel
+out
+public
+node_modules
+next-env.d.ts
+pnpm-lock.yaml
+migrations
