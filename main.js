@@ -1,40 +1,44 @@
-const FORECAST_DAYS = [0, 1, 2, 3, 4, 5, 6, 7];
-const INTERPOLATION_BASE_URL = './models/interpolation';
-const INTERPOLATION_TEMPLATE = 'forecast_interpolation_{day}d.png';
-const PREDICTIONS_CSV_PATH = './models/predictions.csv';
-const MAP_BOUNDS = [11.4, 57.15, 12.5, 58.25];
-const MAP_CENTER = [11.9746, 57.7089];
-const MAP_ZOOM = 11;
+const config = {
+  forecastDays: [0, 1, 2, 3, 4, 5, 6, 7],
+  interpolationBase: './models/interpolation',
+  interpolationTemplate: 'forecast_interpolation_{day}d.png',
+  predictionsCsv: './models/predictions.csv',
+  mapBounds: [11.4, 57.15, 12.5, 58.25],
+  mapCenter: [11.9746, 57.7089],
+  mapZoom: 11,
+};
 
-const daySlider = document.getElementById('forecast-slider');
-const sliderValue = document.getElementById('slider-value');
-const statusEl = document.getElementById('status');
-const sensorToggle = document.getElementById('toggle-sensors');
-const overlayToggle = document.getElementById('toggle-overlay');
-const focusPanel = document.getElementById('focus-panel');
-const focusNameEl = document.getElementById('focus-name');
-const focusMetaEl = document.getElementById('focus-meta');
-const focusDetailsBtn = document.getElementById('focus-details-btn');
-const imageModal = document.getElementById('image-modal');
-const imageModalImg = document.getElementById('image-modal-img');
-const imageModalClose = document.getElementById('image-modal-close');
-const imageModalBackdrop = document.getElementById('image-modal-backdrop');
-const detailsModal = document.getElementById('details-modal');
-const detailsModalTitle = document.getElementById('details-modal-title');
-const detailsTableHead = document.getElementById('details-table-head');
-const detailsTableBody = document.getElementById('details-table-body');
-const detailsModalClose = document.getElementById('details-modal-close');
-const detailsModalBackdrop = document.getElementById('details-modal-backdrop');
+const ui = {
+  daySlider: document.getElementById('forecast-slider'),
+  sliderValue: document.getElementById('slider-value'),
+  sensorToggle: document.getElementById('toggle-sensors'),
+  overlayToggle: document.getElementById('toggle-overlay'),
+  focusPanel: document.getElementById('focus-panel'),
+  focusName: document.getElementById('focus-name'),
+  focusMeta: document.getElementById('focus-meta'),
+  focusDetailsBtn: document.getElementById('focus-details-btn'),
+  imageModal: document.getElementById('image-modal'),
+  imageModalImg: document.getElementById('image-modal-img'),
+  imageModalClose: document.getElementById('image-modal-close'),
+  imageModalBackdrop: document.getElementById('image-modal-backdrop'),
+  detailsModal: document.getElementById('details-modal'),
+  detailsModalTitle: document.getElementById('details-modal-title'),
+  detailsModalClose: document.getElementById('details-modal-close'),
+  detailsModalBackdrop: document.getElementById('details-modal-backdrop'),
+  detailsTableHead: document.getElementById('details-table-head'),
+  detailsTableBody: document.getElementById('details-table-body'),
+};
 
 const state = {
-  currentDay: Number(daySlider?.value || FORECAST_DAYS[0]),
+  currentDay: Number(ui.daySlider?.value ?? config.forecastDays[0]),
   sensorData: {},
   csvHeaders: [],
-  csvMarkers: [],
+  markers: [],
   activeMarkerEl: null,
-  modalActive: false,
-  detailsModalActive: false,
+  modals: { image: false, details: false },
 };
+
+const hiddenColumns = new Set(['longitude', 'latitude', 'sensor_id', 'city_y', 'city_x', 'street', 'country', 'feed_url']);
 
 const map = new maplibregl.Map({
   container: 'map',
@@ -50,87 +54,121 @@ const map = new maplibregl.Map({
     },
     layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
   },
-  center: MAP_CENTER,
-  zoom: MAP_ZOOM,
+  center: config.mapCenter,
+  zoom: config.mapZoom,
   maxZoom: 14,
-
   maxBounds: [
-    [MAP_BOUNDS[0], MAP_BOUNDS[1] + 0.3],
-    [MAP_BOUNDS[2], MAP_BOUNDS[3] - 0.3],
+    [config.mapBounds[0], config.mapBounds[1] + 0.3],
+    [config.mapBounds[2], config.mapBounds[3] - 0.3],
   ],
 });
 
 map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-const formatDayLabel = (day) => {
-  if (day === 0) return 'Today';
-  if (day === 1) return 'Tomorrow';
-  return `Day ${day}`;
-};
-
-const setStatus = (message) => {
-  if (statusEl) {
-    statusEl.textContent = message;
-  }
-};
-
-if (sliderValue) sliderValue.textContent = formatDayLabel(state.currentDay);
-if (daySlider && !daySlider.value) daySlider.value = String(state.currentDay);
-daySlider?.addEventListener('input', (event) => {
-  const day = Number(event.target.value);
-  sliderValue.textContent = formatDayLabel(day);
-  loadRaster(day);
-});
-overlayToggle?.addEventListener('change', () => {
-  if (overlayToggle.checked) {
-    loadRaster(state.currentDay);
-  } else {
-    removeRasterLayer();
-  }
-});
-
 const sourceId = 'pm25-interpolation';
 const layerId = 'pm25-interpolation-layer';
 
-const buildRasterUrl = (day) => {
-  if (INTERPOLATION_TEMPLATE.includes('{day}')) {
-    return `${INTERPOLATION_BASE_URL}/${INTERPOLATION_TEMPLATE.replace('{day}', day)}`;
-  }
-  return INTERPOLATION_TEMPLATE;
-};
+init();
 
-const waitForStyle = () =>
-  new Promise((resolve) => {
+function init() {
+  updateSliderLabel(state.currentDay);
+  if (ui.daySlider && !ui.daySlider.value) {
+    ui.daySlider.value = String(state.currentDay);
+  }
+
+  attachControlEvents();
+  attachModalEvents();
+
+  map.on('load', async () => {
+    await loadRaster(state.currentDay);
+    await loadCsvMarkers();
+  });
+
+  map.on('click', clearFocus);
+}
+
+function attachControlEvents() {
+  ui.daySlider?.addEventListener('input', (event) => {
+    const day = Number(event.target.value);
+    updateSliderLabel(day);
+    loadRaster(day);
+  });
+
+  ui.overlayToggle?.addEventListener('change', () => {
+    if (ui.overlayToggle.checked) loadRaster(state.currentDay);
+    else removeRasterLayer();
+  });
+
+  ui.sensorToggle?.addEventListener('change', () => {
+    state.markers.forEach((marker) => {
+      if (ui.sensorToggle.checked) marker.addTo(map);
+      else marker.remove();
+    });
+    if (!ui.sensorToggle.checked) clearFocus();
+  });
+
+  ui.focusDetailsBtn?.addEventListener('click', () => {
+    if (!ui.focusDetailsBtn.dataset.sensorId) return;
+    openDetailsModal(ui.focusDetailsBtn.dataset.sensorId);
+  });
+}
+
+function attachModalEvents() {
+  ui.imageModalClose?.addEventListener('click', closeImageModal);
+  ui.imageModalBackdrop?.addEventListener('click', closeImageModal);
+  ui.detailsModalClose?.addEventListener('click', closeDetailsModal);
+  ui.detailsModalBackdrop?.addEventListener('click', closeDetailsModal);
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (state.modals.image) closeImageModal();
+    if (state.modals.details) closeDetailsModal();
+  });
+}
+
+function updateSliderLabel(day) {
+  state.currentDay = day;
+  if (!ui.sliderValue) return;
+  ui.sliderValue.textContent = day === 0 ? 'Today' : day === 1 ? 'Tomorrow' : `Day ${day}`;
+}
+
+function buildRasterUrl(day) {
+  return `${config.interpolationBase}/${config.interpolationTemplate.replace('{day}', day)}`;
+}
+
+function waitForStyle() {
+  return new Promise((resolve) => {
     if (map.isStyleLoaded()) resolve();
     else map.once('styledata', resolve);
   });
+}
 
-const removeRasterLayer = () => {
+function removeRasterLayer() {
   if (map.getLayer(layerId)) map.removeLayer(layerId);
   if (map.getSource(sourceId)) map.removeSource(sourceId);
-};
+}
 
 async function loadRaster(day) {
   state.currentDay = day;
-  if (overlayToggle && !overlayToggle.checked) {
+  if (ui.daySlider && ui.daySlider.value !== String(day)) {
+    ui.daySlider.value = String(day);
+  }
+  if (ui.overlayToggle && !ui.overlayToggle.checked) {
     removeRasterLayer();
     return;
   }
-  setStatus(`Loading D+${day} layer…`);
+
   await waitForStyle();
-
   removeRasterLayer();
-
-  const rasterUrl = buildRasterUrl(day);
 
   map.addSource(sourceId, {
     type: 'image',
-    url: rasterUrl,
+    url: buildRasterUrl(day),
     coordinates: [
-      [MAP_BOUNDS[0], MAP_BOUNDS[3]],
-      [MAP_BOUNDS[2], MAP_BOUNDS[3]],
-      [MAP_BOUNDS[2], MAP_BOUNDS[1]],
-      [MAP_BOUNDS[0], MAP_BOUNDS[1]],
+      [config.mapBounds[0], config.mapBounds[3]],
+      [config.mapBounds[2], config.mapBounds[3]],
+      [config.mapBounds[2], config.mapBounds[1]],
+      [config.mapBounds[0], config.mapBounds[1]],
     ],
   });
 
@@ -143,98 +181,87 @@ async function loadRaster(day) {
       'raster-resampling': 'linear',
     },
   });
-  setStatus(`Showing D+${day} layer`);
 }
 
 async function loadCsvMarkers() {
-  if (!PREDICTIONS_CSV_PATH) {
-    setStatus('CSV path missing');
-    return;
-  }
+  if (!config.predictionsCsv) return;
 
   try {
-    const response = await fetch(PREDICTIONS_CSV_PATH);
+    const response = await fetch(config.predictionsCsv);
     if (!response.ok) throw new Error(`Failed to fetch CSV (${response.status})`);
-    const text = await response.text();
-    const rows = parseCsv(text);
+
+    const rows = parseCsv(await response.text());
     state.csvHeaders = rows.length ? Object.keys(rows[0]) : [];
 
-    state.csvMarkers.forEach((marker) => marker.remove());
-    state.csvMarkers = [];
-    Object.keys(state.sensorData).forEach((key) => delete state.sensorData[key]);
+    state.markers.forEach((marker) => marker.remove());
+    state.markers = [];
+    state.sensorData = {};
     clearFocus();
 
-    rows.forEach((row) => {
-      const sensorId = row.sensor_id || row.sensorId;
-      const lat = parseFloat(row.latitude || row.lat);
-      const lon = parseFloat(row.longitude || row.lon || row.lng);
-      if (!sensorId || Number.isNaN(lat) || Number.isNaN(lon)) return;
-
-      if (!state.sensorData[sensorId]) {
-        state.sensorData[sensorId] = {
-          sensorId,
-          lat,
-          lon,
-          city: row.city_y || '',
-          street: row.street || '',
-          latestValue: null,
-          rows: [],
-        };
-      }
-
-      const entry = state.sensorData[sensorId];
-      const predicted = parseFloat(row.predicted_pm25 ?? row.predicted ?? 'NaN');
-      const actual = parseFloat(row.pm25 ?? 'NaN');
-      entry.rows.push(row);
-
-      if (Number.isFinite(predicted)) {
-        entry.latestValue = predicted;
-      } else if (Number.isFinite(actual)) {
-        entry.latestValue = actual;
-      }
-    });
-
-    state.csvMarkers = Object.values(state.sensorData).map((entry) => {
-      const displayValue = entry.latestValue;
-      const markerEl = document.createElement('div');
-      markerEl.className = 'sensor-marker';
-      markerEl.style.background = getAQIColor(displayValue ?? 0);
-
-      markerEl.addEventListener('click', (event) => {
-        event.stopPropagation();
-        focusOnSensor(entry.sensorId, markerEl);
-      });
-
-      const popup = new maplibregl.Popup({ closeButton: false, offset: 12 }).setHTML(
-        buildPopupHtml(entry, displayValue),
-      );
-
-      const marker = new maplibregl.Marker({ element: markerEl })
-        .setLngLat([entry.lon, entry.lat])
-        .setPopup(popup);
-
-      if (sensorToggle.checked) marker.addTo(map);
-      return marker;
-    });
-
-    setStatus(`Loaded ${state.csvMarkers.length} sensors`);
+    rows.forEach((row) => ingestRow(row));
+    state.markers = Object.values(state.sensorData).map(createMarker);
   } catch (error) {
     console.error('Failed to load predictions CSV', error);
-    setStatus('CSV fetch failed');
   }
+}
+
+function ingestRow(row) {
+  const sensorId = row.sensor_id || row.sensorId;
+  const lat = parseFloat(row.latitude ?? row.lat);
+  const lon = parseFloat(row.longitude ?? row.lon ?? row.lng);
+  if (!sensorId || Number.isNaN(lat) || Number.isNaN(lon)) return;
+
+  if (!state.sensorData[sensorId]) {
+    state.sensorData[sensorId] = {
+      sensorId,
+      lat,
+      lon,
+      city: row.city_y || '',
+      street: row.street || '',
+      latestValue: null,
+      rows: [],
+    };
+  }
+
+  const entry = state.sensorData[sensorId];
+  entry.rows.push(row);
+
+  const predicted = parseFloat(row.predicted_pm25 ?? row.predicted ?? 'NaN');
+  const actual = parseFloat(row.pm25 ?? 'NaN');
+  if (Number.isFinite(predicted)) entry.latestValue = predicted;
+  else if (Number.isFinite(actual)) entry.latestValue = actual;
+}
+
+function createMarker(entry) {
+  const element = document.createElement('div');
+  element.className = 'sensor-marker';
+  element.style.background = getAQIColor(entry.latestValue ?? 0);
+  element.addEventListener('click', (event) => {
+    event.stopPropagation();
+    focusOnSensor(entry.sensorId, element);
+  });
+
+  const popup = new maplibregl.Popup({ closeButton: false, offset: 12 }).setHTML(buildPopupHtml(entry));
+
+  const marker = new maplibregl.Marker({ element })
+    .setLngLat([entry.lon, entry.lat])
+    .setPopup(popup);
+
+  if (ui.sensorToggle?.checked ?? true) marker.addTo(map);
+  return marker;
 }
 
 function parseCsv(text) {
   const lines = text.trim().split(/\r?\n/);
   if (!lines.length) return [];
   const headers = splitCsvLine(lines[0]);
+
   return lines.slice(1).map((line) => {
     const cells = splitCsvLine(line);
-    const obj = {};
-    headers.forEach((key, idx) => {
-      obj[key] = cells[idx] ?? '';
-    });
-    return obj;
+    return headers.reduce((acc, key, idx) => {
+      acc[key] = cells[idx] ?? '';
+      return acc;
+    }, {});
   });
 }
 
@@ -242,6 +269,7 @@ function splitCsvLine(line) {
   const result = [];
   let current = '';
   let inQuotes = false;
+
   for (let i = 0; i < line.length; i += 1) {
     const char = line[i];
     if (char === '"') {
@@ -253,6 +281,7 @@ function splitCsvLine(line) {
       current += char;
     }
   }
+
   result.push(current);
   return result.map((cell) => cell.replace(/^"|"$/g, '').trim());
 }
@@ -265,12 +294,12 @@ function getAQIColor(aqi) {
   return '#8f3f97';
 }
 
-const buildPopupHtml = (entry, value) => {
+function buildPopupHtml(entry) {
   const name = entry.street || entry.sensorId;
   const location = entry.city ? `${entry.city}<br/>` : '';
-  const reading = Number.isFinite(value) ? `PM2.5: ${value.toFixed(2)}` : 'No recent value';
+  const reading = Number.isFinite(entry.latestValue) ? `PM2.5: ${entry.latestValue.toFixed(1)}` : 'No recent value';
   return `<strong>${name}</strong><br/>${location}${reading}`;
-};
+}
 
 function focusOnSensor(sensorId, markerEl) {
   const data = state.sensorData[sensorId];
@@ -282,28 +311,24 @@ function focusOnSensor(sensorId, markerEl) {
   state.activeMarkerEl = markerEl;
   markerEl.classList.add('is-active');
 
-  if (focusPanel) focusPanel.style.display = 'flex';
-  if (focusNameEl) {
+  if (ui.focusPanel) ui.focusPanel.style.display = 'flex';
+  if (ui.focusName) {
     const name = data.street || '';
     const location = data.city ? `${data.city}` : '';
-    focusNameEl.textContent = [name, location].filter(Boolean).join(', ') || data.sensorId;
+    ui.focusName.textContent = [name, location].filter(Boolean).join(', ') || data.sensorId;
   }
-  if (focusMetaEl) {
+  if (ui.focusMeta) {
     const latLabel = Number.isFinite(data.lat) ? data.lat.toFixed(4) : '—';
     const lonLabel = Number.isFinite(data.lon) ? data.lon.toFixed(4) : '—';
-    focusMetaEl.textContent = `Lat ${latLabel}, Lon ${lonLabel}, ID ${data.sensorId ?? '—'}`;
+    ui.focusMeta.textContent = `Lat ${latLabel}, Lon ${lonLabel}, ID ${data.sensorId ?? '—'}`;
   }
-  if (focusDetailsBtn) {
-    focusDetailsBtn.disabled = !(data.rows && data.rows.length);
-    focusDetailsBtn.dataset.sensorId = data.sensorId;
+  if (ui.focusDetailsBtn) {
+    ui.focusDetailsBtn.disabled = !(data.rows && data.rows.length);
+    ui.focusDetailsBtn.dataset.sensorId = data.sensorId;
   }
 
   updateFocusImage('forecast-card', 'focus-forecast-thumb', `./models/${sensorId}/images/forecast.png`);
-  updateFocusImage(
-    'hindcast-card',
-    'focus-hindcast-thumb',
-    `./models/${sensorId}/images/hindcast_prediction.png`,
-  );
+  updateFocusImage('hindcast-card', 'focus-hindcast-thumb', `./models/${sensorId}/images/hindcast_prediction.png`);
 
   map.flyTo({
     center: [data.lon, data.lat],
@@ -317,12 +342,12 @@ function clearFocus() {
     state.activeMarkerEl.classList.remove('is-active');
     state.activeMarkerEl = null;
   }
-  if (focusPanel) focusPanel.style.display = 'none';
-  if (focusNameEl) focusNameEl.textContent = '';
-  if (focusMetaEl) focusMetaEl.textContent = '';
-  if (focusDetailsBtn) {
-    focusDetailsBtn.disabled = true;
-    focusDetailsBtn.dataset.sensorId = '';
+  if (ui.focusPanel) ui.focusPanel.style.display = 'none';
+  if (ui.focusName) ui.focusName.textContent = '';
+  if (ui.focusMeta) ui.focusMeta.textContent = '';
+  if (ui.focusDetailsBtn) {
+    ui.focusDetailsBtn.disabled = true;
+    ui.focusDetailsBtn.dataset.sensorId = '';
   }
   hideFocusImage('forecast-card', 'focus-forecast-thumb');
   hideFocusImage('hindcast-card', 'focus-hindcast-thumb');
@@ -358,36 +383,34 @@ function hideFocusImage(cardId, thumbId) {
 }
 
 function openDetailsModal(sensorId) {
-  if (!detailsModal) return;
+  if (!ui.detailsModal) return;
   const entry = state.sensorData[sensorId];
   if (!entry || !entry.rows.length) return;
 
-  const titleParts = [entry.street, entry.city].filter(Boolean);
-  if (detailsModalTitle) {
-    detailsModalTitle.textContent = titleParts.length ? titleParts.join(', ') : entry.sensorId;
+  if (ui.detailsModalTitle) {
+    const titleParts = [entry.street, entry.city].filter(Boolean);
+    ui.detailsModalTitle.textContent = titleParts.length ? titleParts.join(', ') : entry.sensorId;
   }
 
   renderDetailsTable(entry);
-  detailsModal.classList.remove('hidden');
-  state.detailsModalActive = true;
+  ui.detailsModal.classList.remove('hidden');
+  state.modals.details = true;
 }
 
 function closeDetailsModal() {
-  if (!detailsModal) return;
-  detailsModal.classList.add('hidden');
-  state.detailsModalActive = false;
+  if (!ui.detailsModal) return;
+  ui.detailsModal.classList.add('hidden');
+  state.modals.details = false;
 }
 
 function renderDetailsTable(entry) {
-  if (!detailsTableHead || !detailsTableBody) return;
-  const hiddenColumns = new Set(['longitude', 'latitude', 'sensor_id', 'city_y', 'street', 'country', 'feed_url']);
+  if (!ui.detailsTableHead || !ui.detailsTableBody) return;
   const headers = (state.csvHeaders.length ? state.csvHeaders : Object.keys(entry.rows[0] || {})).filter(
     (header) => !hiddenColumns.has(header),
   );
 
-  detailsTableHead.innerHTML = '';
-  detailsTableBody.innerHTML = '';
-
+  ui.detailsTableHead.innerHTML = '';
+  ui.detailsTableBody.innerHTML = '';
   if (!headers.length) return;
 
   const headRow = document.createElement('tr');
@@ -396,7 +419,7 @@ function renderDetailsTable(entry) {
     th.textContent = header;
     headRow.appendChild(th);
   });
-  detailsTableHead.appendChild(headRow);
+  ui.detailsTableHead.appendChild(headRow);
 
   entry.rows.forEach((row) => {
     const tr = document.createElement('tr');
@@ -405,54 +428,21 @@ function renderDetailsTable(entry) {
       td.textContent = row[header] ?? '';
       tr.appendChild(td);
     });
-    detailsTableBody.appendChild(tr);
+    ui.detailsTableBody.appendChild(tr);
   });
 }
 
 function openImageModal(src) {
-  if (!imageModal || !imageModalImg) return;
-  imageModalImg.src = src;
-  imageModal.classList.remove('hidden');
-  state.modalActive = true;
+  if (!ui.imageModal || !ui.imageModalImg) return;
+  ui.imageModalImg.src = src;
+  ui.imageModal.classList.remove('hidden');
+  state.modals.image = true;
 }
 
 function closeImageModal() {
-  if (!imageModal || !imageModalImg) return;
-  imageModal.classList.add('hidden');
-  imageModalImg.src = '';
-  state.modalActive = false;
+  if (!ui.imageModal || !ui.imageModalImg) return;
+  ui.imageModal.classList.add('hidden');
+  ui.imageModalImg.src = '';
+  state.modals.image = false;
 }
-
-imageModalClose?.addEventListener('click', closeImageModal);
-imageModalBackdrop?.addEventListener('click', closeImageModal);
-detailsModalClose?.addEventListener('click', closeDetailsModal);
-detailsModalBackdrop?.addEventListener('click', closeDetailsModal);
-focusDetailsBtn?.addEventListener('click', () => {
-  if (!focusDetailsBtn?.dataset.sensorId) return;
-  openDetailsModal(focusDetailsBtn.dataset.sensorId);
-});
-document.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape') return;
-  if (state.modalActive) closeImageModal();
-  if (state.detailsModalActive) closeDetailsModal();
-});
-
-sensorToggle.addEventListener('change', () => {
-  state.csvMarkers.forEach((marker) => {
-    if (sensorToggle.checked) marker.addTo(map);
-    else marker.remove();
-  });
-  if (!sensorToggle.checked) {
-    clearFocus();
-  }
-});
-
-map.on('load', async () => {
-  await loadRaster(state.currentDay);
-  await loadCsvMarkers();
-});
-
-map.on('click', () => {
-  clearFocus();
-});
 
