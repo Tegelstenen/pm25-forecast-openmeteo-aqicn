@@ -8,6 +8,7 @@
 *.pem
 __pycache__
 .cache.sqlite
+mistral/
 
 # env
 .env*

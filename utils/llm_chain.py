@@ -1,13 +1,11 @@
 import transformers
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, AutoConfig, AutoModel
-from langchain.llms import HuggingFacePipeline
-from langchain.prompts import PromptTemplate
-from langchain.chains.llm import LLMChain
-from langchain.memory import ConversationBufferWindowMemory
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, AutoModel
+from langchain_huggingface import HuggingFacePipeline
+from langchain_core.prompts import PromptTemplate
 import torch
 import datetime
 from typing import Any, Dict, Union
-from functions.context_engineering import get_context_data
+from utils.context_engineering import get_context_data
 import os
 from safetensors.torch import load_model, save_model
 
@@ -36,25 +34,39 @@ def load_model(model_id: str = "teknium/OpenHermes-2.5-Mistral-7B") -> tuple:
     # Set the padding side to "right" to prevent warnings during tokenization
     tokenizer.padding_side = "right"
 
-    # BitsAndBytesConfig int-4 config
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,
-    )
+    try:
+        import bitsandbytes
+        from transformers import BitsAndBytesConfig
+        use_quantization = True
+    except ImportError:
+        use_quantization = False
+        print("Warning: bitsandbytes not available. Loading model without quantization (will use more memory).")
 
     model_path = "/tmp/mistral/model"
     if os.path.exists(model_path):
         print("Loading model from disk")
         model_llm = AutoModelForCausalLM.from_pretrained(model_path)
     else:
-        # Load the Mistral-7B-Instruct model with quantization configuration
-        model_llm = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            device_map="auto",
-            quantization_config=bnb_config,
-        )
+        if use_quantization:
+            # BitsAndBytesConfig int-4 config
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            )
+            # Load the Mistral-7B-Instruct model with quantization configuration
+            model_llm = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map="auto",
+                quantization_config=bnb_config,
+            )
+        else:
+            # Load the model without quantization
+            model_llm = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map="auto",
+            )
         model_llm.save_pretrained(model_path)
 
 
@@ -134,12 +146,7 @@ def get_llm_chain(model_llm, tokenizer):
         template=get_prompt_template(),
     )
 
-    # Create LLM chain
-    llm_chain = LLMChain(
-        llm=mistral_llm,
-        prompt=prompt,
-        verbose=False,
-    )
+    llm_chain = prompt | mistral_llm
 
     return llm_chain
 
@@ -195,7 +202,10 @@ def generate_response(
     })
 
     # Return the generated text from the model output
-    return model_output['text'].split('<|im_start|>assistant')[-1]
+    if isinstance(model_output, str):
+        return model_output.split('<|im_start|>assistant')[-1]
+    else:
+        return model_output.get('text', str(model_output)).split('<|im_start|>assistant')[-1]
 
 
 def generate_response_openai(
