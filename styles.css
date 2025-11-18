@@ -2,15 +2,16 @@
   --font-family: 'Inter', sans-serif;
   --page-bg: #f4f6fb;
   --text-primary: #0f172a;
-  --text-strong: #111111;
   --text-muted: #94a3b8;
-  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-bg: rgba(255, 255, 255, 0.5);
   --glass-bg-strong: rgba(255, 255, 255, 0.9);
   --glass-border: rgba(255, 255, 255, 0.5);
   --pane-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
   --legend-border: rgba(0, 0, 0, 0.1);
   --table-border: rgba(15, 23, 42, 0.08);
   --table-stripe: rgba(15, 23, 42, 0.02);
+  --backdrop-bg: rgba(148, 163, 184, 0.35);
+  --transition: 0.2s ease-in-out;
 }
 
 body {
@@ -54,13 +55,24 @@ body {
   border: 2px solid #fff;
   display: block;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  transition: width 0.15s ease, height 0.15s ease, border 0.15s ease;
+  transition: width 0.3s ease, height 0.3s ease, border 0.3s ease;
 }
 
 .sensor-marker.is-active {
   width: 32px;
   height: 32px;
   border-color: rgba(255, 255, 255, 0.9);
+}
+
+#focus-panel {
+  opacity: 0;
+  transition: opacity var(--transition);
+  pointer-events: none;
+}
+
+#focus-panel[style*="display: flex"],
+#focus-panel[style*="opacity: 1"] {
+  pointer-events: auto;
 }
 
 .focus-image-card {
@@ -112,7 +124,7 @@ body {
 .details-modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(148, 163, 184, 0.35);
+  background: var(--backdrop-bg);
 }
 
 .image-modal-content,
@@ -121,23 +133,18 @@ body {
   border-radius: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
   background: rgba(255, 255, 255, 1);
   color: var(--text-primary);
   box-shadow: var(--pane-shadow);
   z-index: 1;
-}
-
-.image-modal-content {
   max-width: 90vw;
   max-height: 90vh;
   padding: 1rem;
 }
 
 .details-modal-content {
-  width: min(90vw, 720px);
-  max-height: 85vh;
-  padding: 1.25rem;
+  width: min(90vw, 900px);
 }
 
 .image-modal-content img {
@@ -155,7 +162,6 @@ body {
   background: transparent;
   color: var(--text-muted);
   font-size: 1.5rem;
-  line-height: 1;
   cursor: pointer;
   transition: color 0.2s ease;
 }
@@ -163,12 +169,7 @@ body {
 .image-modal-close {
   position: absolute;
   top: 0.5rem;
-  right: 0.75rem;
-  font-size: 1.8rem;
-}
-
-.details-modal-close {
-  padding: 0.25rem;
+  right: 1rem;
 }
 
 .image-modal-close:hover,
@@ -181,7 +182,7 @@ body {
   border: 1px solid var(--table-border);
   background: rgba(248, 250, 252, 0.7);
   overflow: auto;
-  max-height: 60vh;
+  max-height: 70vh;
 }
 
 .details-table-wrapper table {
@@ -208,4 +209,3 @@ body {
 .details-table-wrapper tbody tr:nth-child(odd) {
   background: var(--table-stripe);
 }
-

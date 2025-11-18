@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Air Quality Forecast Map</title>
+    <title>PM25 Forecast</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link
       rel="stylesheet"
@@ -19,7 +19,7 @@
           class="flex w-80 flex-col gap-4 rounded-2xl border border-white/40 bg-white/60 p-4 text-sm backdrop-blur-lg"
         >
           <section class="flex flex-col gap-2">
-            <h2 class="text-base font-semibold">Options</h2>
+            <h2 class="text-base font-semibold">Map options</h2>
             <label class="flex items-center gap-2 text-sm">
                 <input type="checkbox" id="toggle-sensors" checked class="h-4 w-4 rounded" />
                 <span>Show sensors</span>
@@ -45,12 +45,12 @@
             </label>
           </section>
           <section>
-            <h2 class="mb-2 text-base font-semibold">Legend</h2>
+            <h2 class="mb-2 text-base font-semibold">PM<sub>2.5</sub> concentrations</h2>
             <ul class="legend flex flex-col gap-1 text-sm">
-              <li><span class="color level-0"></span> 0-16 µg/m<sup>3</sup></li>
-              <li><span class="color level-2"></span> 16-32 µg/m<sup>3</sup></li>
-              <li><span class="color level-4"></span> 33-49 µg/m<sup>3</sup></li>
-              <li><span class="color level-6"></span> 50+ µg/m<sup>3</sup></li>
+              <li><span class="color good"></span> 0-16 µg/m<sup>3</sup></li>
+              <li><span class="color moderate"></span> 16-32 µg/m<sup>3</sup></li>
+              <li><span class="color unhealthy"></span> 33-49 µg/m<sup>3</sup></li>
+              <li><span class="color very-unhealthy"></span> 50+ µg/m<sup>3</sup></li>
             </ul>
           </section>
         </aside>
