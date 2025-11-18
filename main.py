@@ -36,29 +36,8 @@ def push_results():
     images_dir = Path("images")
     images_dir.mkdir(exist_ok=True)
 
-    # Copy forecast and hindcast images from all sensors
-    models_dir = Path("../models")
-    if models_dir.exists():
-        for sensor_dir in models_dir.glob("*/images"):
-            sensor_id = sensor_dir.parent.name
-            # Copy forecast images
-            forecast_img = sensor_dir / "forecast.png"
-            if forecast_img.exists():
-                shutil.copy(forecast_img, images_dir / f"{sensor_id}_forecast.png")
-
-            # Copy hindcast images
-            hindcast_img = sensor_dir / "hindcast_prediction.png"
-            if hindcast_img.exists():
-                shutil.copy(hindcast_img, images_dir / f"{sensor_id}_hindcast.png")
-
-        # Copy interpolation images
-        interpolation_dir = models_dir / "interpolation"
-        if interpolation_dir.exists():
-            for interp_img in interpolation_dir.glob("forecast_interpolation_*.png"):
-                shutil.copy(interp_img, images_dir / interp_img.name)
-
     # Add all changes
-    subprocess.run(["git", "add", "images/"], check=True)
+    subprocess.run(["git", "add", "models/"], check=True)
 
     # Create commit with timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
